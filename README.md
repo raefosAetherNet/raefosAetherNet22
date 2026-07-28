@@ -1,4 +1,4 @@
-##Coming Soon: raefos:AetherNet 
+## Coming Soon: raefos:AetherNet 
 We are hard at work building the next generation of social networking. 
 
 ## Features
