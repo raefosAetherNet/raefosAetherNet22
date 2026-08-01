@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { generateClient } from 'aws-amplify/data';
 import { getCurrentUser } from 'aws-amplify/auth';
 import type { Schema } from '../../amplify/data/resource';
@@ -11,6 +11,7 @@ const agentThought = ref('');
 const agentRunning = ref(false);
 const agentStatus = ref('Idle');
 const currentUserName = ref('');
+let logsSubscription: { unsubscribe: () => void } | undefined;
 
 // A simulated AI agent that "observes" recent posts and archives, then logs its actions.
 // In a real deployment this would call a backend Lambda / Bedrock agent via API.
@@ -30,7 +31,8 @@ async function loadCurrentUser() {
 }
 
 function loadLogs() {
-  client.models.AiAgentLog.observeQuery().subscribe({
+  logsSubscription?.unsubscribe();
+  logsSubscription = client.models.AiAgentLog.observeQuery().subscribe({
     next: ({ items }) => {
       agentLogs.value = [...items].sort(
         (a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
@@ -43,34 +45,40 @@ async function runAgentCycle() {
   agentRunning.value = true;
   agentStatus.value = 'Analysing community content…';
   agentThought.value = '';
+  try {
+    const steps = [
+      'Scanning recent posts and archive activity…',
+      'Identifying patterns and learning opportunities…',
+      'Generating action plan…',
+      'Executing actions…',
+      'Logging results…',
+    ];
 
-  const steps = [
-    'Scanning recent posts and archive activity…',
-    'Identifying patterns and learning opportunities…',
-    'Generating action plan…',
-    'Executing actions…',
-    'Logging results…',
-  ];
+    for (const step of steps) {
+      agentStatus.value = step;
+      agentThought.value += `• ${step}\n`;
+      await delay(600);
+    }
 
-  for (const step of steps) {
-    agentStatus.value = step;
-    agentThought.value += `• ${step}\n`;
-    await delay(600);
+    const action = AGENT_ACTIONS[Math.floor(Math.random() * AGENT_ACTIONS.length)];
+    const targetTypes = ['post', 'comment', 'archive', 'archiveItem'] as const;
+    const targetType = targetTypes[Math.floor(Math.random() * targetTypes.length)];
+
+    await client.models.AiAgentLog.create({
+      action,
+      targetType,
+      summary: `Agent cycle completed at ${new Date().toLocaleTimeString()} — ${action.toLowerCase()}.`,
+      learnedFrom: `Community activity observed by ${currentUserName.value || 'the AetherNet agent'}`,
+    });
+
+    agentStatus.value = 'Idle — cycle complete ✅';
+  } catch (error) {
+    console.error('Failed to run AI agent cycle', error);
+    agentStatus.value = 'Agent cycle failed ❌';
+    agentThought.value += '• Unable to save agent activity right now.\n';
+  } finally {
+    agentRunning.value = false;
   }
-
-  const action = AGENT_ACTIONS[Math.floor(Math.random() * AGENT_ACTIONS.length)];
-  const targetTypes = ['post', 'comment', 'archive', 'archiveItem'] as const;
-  const targetType = targetTypes[Math.floor(Math.random() * targetTypes.length)];
-
-  await client.models.AiAgentLog.create({
-    action,
-    targetType,
-    summary: `Agent cycle completed at ${new Date().toLocaleTimeString()} — ${action.toLowerCase()}.`,
-    learnedFrom: `Community activity observed by ${currentUserName.value || 'the AetherNet agent'}`,
-  });
-
-  agentStatus.value = 'Idle — cycle complete ✅';
-  agentRunning.value = false;
 }
 
 function delay(ms: number) {
@@ -92,6 +100,10 @@ const TARGET_ICONS: Record<string, string> = {
 onMounted(async () => {
   await loadCurrentUser();
   loadLogs();
+});
+
+onUnmounted(() => {
+  logsSubscription?.unsubscribe();
 });
 </script>
 
